@@ -4,7 +4,7 @@ const MODE_CONFIG: Record<string, { instruction: string }> = {
   swift: { instruction: "Be concise. 2-3 sentences max." },
   think: { instruction: "Think step by step. Use markdown with headers and lists." },
   beast: { instruction: "Comprehensive expert-level response. Use code blocks, headers, examples." },
-  code: { instruction: "Write production-grade code with types, error handling, comments. Use code blocks with language tags. Output the final code directly." },
+  code: { instruction: "RULES: 1) Start with the code block IMMEDIATELY. 2) NEVER say 'we need to', 'let me', 'let us', 'should', 'I will'. 3) NEVER describe your planning process. 4) Write production-grade TypeScript with types, error handling, comments in code blocks. 5) After the code block, briefly explain usage." },
   search: { instruction: "Provide factual answers with dates and specifics." },
 };
 
@@ -17,13 +17,47 @@ const ENDPOINTS = [
 function extractText(raw: string): string {
   try {
     const json = JSON.parse(raw);
-    if (json?.choices?.[0]?.message?.content) return json.choices[0].message.content;
-    if (typeof json?.content === "string" && json.content.length > 0) return json.content;
-    if (typeof json?.reasoning_content === "string" && json.reasoning_content.length > 0) return json.reasoning_content;
-    return raw;
+    let text = "";
+    if (json?.choices?.[0]?.message?.content) text = json.choices[0].message.content;
+    else if (typeof json?.content === "string" && json.content.length > 0) text = json.content;
+    else if (typeof json?.reasoning_content === "string" && json.reasoning_content.length > 0) text = json.reasoning_content;
+    else text = raw;
+    return cleanReasoning(text);
   } catch {
-    return raw;
+    return cleanReasoning(raw);
   }
+}
+
+function cleanReasoning(text: string): string {
+  const lines = text.split("\n");
+  const cleaned: string[] = [];
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    // Always keep code blocks
+    if (line.trimStart().startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      cleaned.push(line);
+      continue;
+    }
+    if (inCodeBlock) {
+      cleaned.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+
+    // Skip planning/reasoning lines
+    if (/^(We need to|Let's|Let us|Should |I will |I'll |Also |Maybe |Ok\.|Okay\.|Proceed|That might|Simpler:|Parameters:|Return:|Implement |But question)/i.test(trimmed)) continue;
+    if (/^(tsCopy|jsCopy|Copy)$/i.test(trimmed)) continue;
+    if (trimmed.endsWith("?") && trimmed.length < 80 && !trimmed.startsWith("#")) continue;
+    if (/^(Yes\.|No\.|Ok |Okay )/i.test(trimmed) && trimmed.length < 20) continue;
+
+    cleaned.push(line);
+  }
+
+  const result = cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return result || text; // fallback to original if everything got stripped
 }
 
 async function tryPost(prompt: string, systemPrompt: string, history: any[]): Promise<string | null> {
