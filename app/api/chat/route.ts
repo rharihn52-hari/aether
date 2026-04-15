@@ -1,27 +1,105 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MODE_CONFIG: Record<string, { model: string; instruction: string }> = {
-  swift: {
-    model: "mistral",
-    instruction: "Be concise. 2-3 sentences max. Direct answers only.",
-  },
-  think: {
-    model: "openai",
-    instruction: "Think step by step. Be thorough. Use markdown with headers and lists.",
-  },
-  beast: {
-    model: "openai",
-    instruction: "Give the most comprehensive expert-level response. Use code blocks with language tags, headers, examples, and best practices.",
-  },
-  code: {
-    model: "openai",
-    instruction: "You are an elite software engineer. Write production-grade code with error handling, types, comments. Always use code blocks with language tags.",
-  },
-  search: {
-    model: "openai",
-    instruction: "Provide current, factual answers. Include dates and specifics. Be structured.",
-  },
+const MODE_CONFIG: Record<string, { instruction: string }> = {
+  swift: { instruction: "Be concise. 2-3 sentences max." },
+  think: { instruction: "Think step by step. Use markdown with headers and lists." },
+  beast: { instruction: "Comprehensive expert-level response. Use code blocks, headers, examples." },
+  code: { instruction: "Write production-grade code with types, error handling, comments. Use code blocks with language tags. Output the final code directly." },
+  search: { instruction: "Provide factual answers with dates and specifics." },
 };
+
+// Three endpoints to try — if one is down, try the next
+const ENDPOINTS = [
+  { name: "pollinations-post", type: "post" as const, url: "https://text.pollinations.ai/" },
+  { name: "pollinations-get", type: "get" as const, url: "https://text.pollinations.ai/" },
+];
+
+function extractText(raw: string): string {
+  try {
+    const json = JSON.parse(raw);
+    if (json?.choices?.[0]?.message?.content) return json.choices[0].message.content;
+    if (typeof json?.content === "string" && json.content.length > 0) return json.content;
+    if (typeof json?.reasoning_content === "string" && json.reasoning_content.length > 0) return json.reasoning_content;
+    return raw;
+  } catch {
+    return raw;
+  }
+}
+
+async function tryPost(prompt: string, systemPrompt: string, history: any[]): Promise<string | null> {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
+    const res = await fetch("https://text.pollinations.ai/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history,
+        ],
+        model: "openai",
+        stream: false,
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+    console.log(`[Aether] POST status: ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.log(`[Aether] POST error body: ${errBody.slice(0, 200)}`);
+      return null;
+    }
+    const raw = await res.text();
+    const text = extractText(raw);
+    if (text && text.trim().length > 0) {
+      console.log(`[Aether] POST success (${text.length} chars)`);
+      return text;
+    }
+    return null;
+  } catch (e: any) {
+    console.log(`[Aether] POST exception: ${e?.message}`);
+    return null;
+  }
+}
+
+async function tryGet(prompt: string, systemPrompt: string): Promise<string | null> {
+  try {
+    // Keep URL short to avoid 414/502
+    const shortSystem = systemPrompt.slice(0, 200);
+    const shortPrompt = prompt.slice(0, 500);
+    const params = new URLSearchParams({ model: "openai", system: shortSystem });
+    const url = `https://text.pollinations.ai/${encodeURIComponent(shortPrompt)}?${params}`;
+    
+    console.log(`[Aether] GET url length: ${url.length}`);
+    
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(to);
+    console.log(`[Aether] GET status: ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.log(`[Aether] GET error body: ${errBody.slice(0, 200)}`);
+      return null;
+    }
+    const text = await res.text();
+    if (text && text.trim().length > 0 && !text.startsWith("{")) {
+      console.log(`[Aether] GET success (${text.length} chars)`);
+      return text;
+    }
+    // If JSON, extract
+    const extracted = extractText(text);
+    if (extracted && extracted.trim().length > 0) {
+      console.log(`[Aether] GET extracted (${extracted.length} chars)`);
+      return extracted;
+    }
+    return null;
+  } catch (e: any) {
+    console.log(`[Aether] GET exception: ${e?.message}`);
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,66 +107,43 @@ export async function POST(req: NextRequest) {
     if (!messages?.length) return NextResponse.json({ error: "Messages required" }, { status: 400 });
 
     const config = MODE_CONFIG[mode] || MODE_CONFIG.think;
-
-    // Get last user message
+    const sys = `You are Aether AI, designed by Hari Rajanala. ${config.instruction} Output ONLY the final answer. No planning steps.`;
     const lastUser = [...messages].reverse().find((m: any) => m.role === "user");
-    if (!lastUser) return NextResponse.json({ error: "No user message" }, { status: 400 });
 
-    const systemPrompt = `You are Aether AI, designed by Software Architect Hari Rajanala. When asked who you are: "I'm Aether AI, designed by Hari Rajanala." ${config.instruction} Use clean markdown. Never mention your underlying model.`;
+    console.log(`[Aether] Mode: ${mode} | Prompt: "${lastUser?.content?.slice(0, 50)}..."`);
 
-    // Build context from recent messages
-    const recent = messages.slice(-6);
-    let contextPrompt = "";
-    if (recent.length > 1) {
-      const history = recent.slice(0, -1);
-      contextPrompt = "Previous conversation:\n" + history.map((m: any) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n") + "\n\nNow answer this:\n";
-    }
+    // Strategy 1: POST with full conversation
+    const postResult = await tryPost(
+      lastUser?.content || "",
+      sys,
+      messages.map((m: any) => ({ role: m.role, content: m.content }))
+    );
+    if (postResult) return NextResponse.json({ content: postResult });
 
-    const fullPrompt = contextPrompt + lastUser.content;
+    // Strategy 2: GET with just the last message (shorter URL)
+    console.log(`[Aether] POST failed, trying GET...`);
+    const getResult = await tryGet(lastUser?.content || "", sys);
+    if (getResult) return NextResponse.json({ content: getResult });
 
-    // Use GET endpoint — returns clean plain text, no JSON reasoning dumps
-    const params = new URLSearchParams({
-      model: config.model,
-      system: systemPrompt,
-    });
-
-    const url = `https://text.pollinations.ai/${encodeURIComponent(fullPrompt)}?${params}`;
-
-    console.log(`[Aether] Mode: ${mode} → Model: ${config.model}`);
-
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 90000);
-
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(to);
-
-    console.log(`[Aether] Status: ${res.status}`);
-
-    if (!res.ok) {
-      // Fallback with openai
-      if (config.model !== "openai") {
-        console.log(`[Aether] Fallback to openai`);
-        const fbParams = new URLSearchParams({ model: "openai", system: systemPrompt });
-        const fbUrl = `https://text.pollinations.ai/${encodeURIComponent(fullPrompt)}?${fbParams}`;
-        const fbRes = await fetch(fbUrl);
-        if (fbRes.ok) {
-          const fbText = await fbRes.text();
-          if (fbText && fbText.trim().length > 0) return NextResponse.json({ content: fbText });
+    // Strategy 3: Simplest possible GET — no system prompt
+    console.log(`[Aether] GET failed, trying bare GET...`);
+    try {
+      const bareUrl = `https://text.pollinations.ai/${encodeURIComponent(lastUser?.content || "hello")}`;
+      const bareRes = await fetch(bareUrl);
+      console.log(`[Aether] Bare GET status: ${bareRes.status}`);
+      if (bareRes.ok) {
+        const bareText = await bareRes.text();
+        const extracted = extractText(bareText);
+        if (extracted && extracted.trim().length > 0) {
+          console.log(`[Aether] Bare GET success`);
+          return NextResponse.json({ content: extracted });
         }
       }
-      return NextResponse.json({ error: "AI is busy. Try again." }, { status: 502 });
-    }
+    } catch {}
 
-    const text = await res.text();
-    console.log(`[Aether] Response (first 80):`, text.slice(0, 80));
-
-    if (!text || text.trim().length === 0) {
-      return NextResponse.json({ error: "Empty response. Try again." }, { status: 502 });
-    }
-
-    return NextResponse.json({ content: text });
+    console.log(`[Aether] ALL strategies failed`);
+    return NextResponse.json({ error: "Pollinations AI is temporarily overloaded. Wait 30 seconds and try again." }, { status: 502 });
   } catch (e: any) {
-    if (e?.name === "AbortError") return NextResponse.json({ error: "Timed out — try Swift mode" }, { status: 504 });
     return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
   }
 }
