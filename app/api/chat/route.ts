@@ -4,8 +4,7 @@ const MODE_CONFIG: Record<string, { instruction: string }> = {
   swift: { instruction: "Be concise. 2-3 sentences max." },
   think: { instruction: "Think step by step. Use markdown with headers and lists." },
   beast: { instruction: "Comprehensive expert-level response. Use code blocks, headers, examples." },
-  code: { instruction: "RULES: 1) Start with the code block IMMEDIATELY. 2) NEVER say 'we need to', 'let me', 'let us', 'should', 'I will'. 3) NEVER describe your planning process. 4) Write production-grade TypeScript with types, error handling, comments in code blocks. 5) After the code block, briefly explain usage." },
-  search: { instruction: "Provide factual answers with dates and specifics." },
+  code: { instruction: "RULES: 1) If the user asks for code, start with the code block immediately. Write production-grade TypeScript with types, error handling, comments. 2) If the user asks a general question (ideas, explanations, comparisons, advice), answer in plain markdown WITHOUT code. 3) NEVER show planning steps or reasoning. 4) Match the response format to what was asked." },
 };
 
 // Three endpoints to try — if one is down, try the next
