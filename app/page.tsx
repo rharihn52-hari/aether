@@ -1,6 +1,26 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 
+// ── Logo Component ──
+function AetherLogo({size=32}:{size?:number}){
+  return(
+    <svg viewBox="0 0 80 80" width={size} height={size}>
+      <circle cx="40" cy="40" r="8" fill="var(--ac)"/>
+      <circle cx="20" cy="22" r="3" fill="var(--acd)"/>
+      <circle cx="60" cy="22" r="3" fill="var(--acd)"/>
+      <circle cx="18" cy="55" r="3" fill="var(--t2)"/>
+      <circle cx="62" cy="55" r="3" fill="var(--t2)"/>
+      <circle cx="40" cy="14" r="3" fill="var(--acd)"/>
+      <line x1="40" y1="32" x2="40" y2="17" stroke="var(--acd)" strokeWidth="0.8"/>
+      <line x1="33" y1="35" x2="22" y2="24" stroke="var(--acd)" strokeWidth="0.8"/>
+      <line x1="47" y1="35" x2="58" y2="24" stroke="var(--acd)" strokeWidth="0.8"/>
+      <line x1="33" y1="46" x2="20" y2="53" stroke="var(--t2)" strokeWidth="0.8"/>
+      <line x1="47" y1="46" x2="60" y2="53" stroke="var(--t2)" strokeWidth="0.8"/>
+      <text x="40" y="44" textAnchor="middle" fontFamily="Sora,sans-serif" fontSize="9" fontWeight="700" fill="var(--bg0)">Ae</text>
+    </svg>
+  );
+}
+
 // ════════════════════════════════════════════════════════
 // EDIT YOUR PROFILE
 // ════════════════════════════════════════════════════════
@@ -14,7 +34,7 @@ const ME = {
   links: [
     { label: "GitHub", url: "https://github.com/rharihn52-hari" },
     { label: "LinkedIn", url: "https://linkedin.com/in/EDIT-HERE" },
-    { label: "Email", url: "mailto:EDIT@EMAIL.COM" },
+    { label: "Email", url: "mailto:hariitprofessional@gmail.com" },
   ],
 };
 
@@ -112,7 +132,7 @@ function DnaHelix(){return<div className="flex gap-1.5 items-center h-6">{[0,1,2
 function ChatMessage({m,style}:{m:Msg;style:string}){
   const isU=m.role==="user";
   const time=new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-  const av=<div className="h-4 w-4 rounded-md flex items-center justify-center text-[7px] font-bold shrink-0" style={{background:"var(--ac)",color:"var(--bg0)"}}>Ae</div>;
+  const av=<AetherLogo size={18}/>;
 
   if(style==="gradient") return(
     <div>
@@ -248,7 +268,7 @@ export default function Home(){
   if(splash)return(
     <div className="splash fixed inset-0 z-50 flex flex-col items-center justify-center" style={{background:"var(--bg0)"}}>
       <div className="relative splash-logo">
-        <div className="h-16 w-16 rounded-2xl flex items-center justify-center text-lg font-display font-bold shadow-2xl" style={{background:"var(--ac)",color:"var(--bg0)",boxShadow:"0 0 40px var(--acg2)"}}>Ae</div>
+        <AetherLogo size={64}/>
         <div className="splash-ring absolute inset-0 rounded-2xl border-2 opacity-0" style={{borderColor:"var(--ac)"}}/>
       </div>
       <h1 className="font-display text-2xl font-semibold mt-5 tracking-tight" style={{color:"var(--t0)"}}>Aether</h1>
@@ -279,7 +299,7 @@ export default function Home(){
       <header className="sticky top-0 z-40 border-b px-4 py-2" style={{borderColor:"var(--brd)",background:"color-mix(in srgb, var(--bg0) 85%, transparent)",backdropFilter:"blur(16px)"}}>
         <div className="mx-auto max-w-5xl flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-xl flex items-center justify-center text-[11px] font-display font-bold tracking-tight" style={{background:"var(--ac)",color:"var(--bg0)",boxShadow:"0 0 20px var(--acg2)"}}>Ae</div>
+            <AetherLogo size={32}/>
             <div className="flex items-baseline gap-1.5">
               <span className="font-display text-[15px] font-bold tracking-tight" style={{color:"var(--t0)"}}>Aether</span>
               <span className="hidden sm:inline font-body text-[9px] tracking-[0.15em] uppercase" style={{color:"var(--ac)",opacity:0.6}}>ai</span>
@@ -364,7 +384,7 @@ export default function Home(){
             <div className="flex-1 overflow-y-auto space-y-1 pr-1 pb-3">
               {chatMsgs.length===0&&!busy&&(
                 <div className="flex flex-col items-center justify-center h-full">
-                  <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-base font-display font-bold mb-4" style={{background:"var(--acg)",color:"var(--ac)"}}>Ae</div>
+                  <div className="mb-4"><AetherLogo size={48}/></div>
                   <h2 className="font-display text-lg font-semibold mb-1" style={{color:"var(--t1)"}}>What can I help with?</h2>
                   <p className="font-body text-xs text-center max-w-sm mb-5" style={{color:"var(--t2)"}}>Ask anything. Write code. Create content. Export as PDF or Excel.</p>
                   <div className="grid grid-cols-2 gap-2 max-w-md w-full">
