@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     const lang = detectLanguage(prompt);
     const langPrompt = getLanguagePrompt(lang);
 
-    const sys = `You are Aether AI, designed by Hari Rajanala. ${config.instruction} Start your response with the actual answer immediately. No thinking process.${langPrompt}`;
+    const sys = `You are Aether AI, designed by Hari Rajanala. ${config.instruction} RULES: Start with the answer IMMEDIATELY. Never say "User:", "We need to", "Let me think". Never show planning. If giving a schedule, use markdown lists NOT tables.${langPrompt}`;
 
     const fullMessages = [
       { role: "system", content: sys },

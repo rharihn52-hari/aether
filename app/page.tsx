@@ -42,28 +42,76 @@ function CodeBlock({code,lang}:{code:string;lang:string}){
   return(<div className="my-2 rounded-xl overflow-hidden" style={{border:"1px solid var(--brd)"}}><div className="flex items-center justify-between px-3 py-1.5" style={{background:"var(--bg3)"}}><span className="font-mono text-[10px]" style={{color:"var(--ac)"}}>{lang||"code"}</span><button onClick={()=>{navigator.clipboard.writeText(code);setCp(true);setTimeout(()=>setCp(false),2000)}} className="font-mono text-[10px] px-2 py-0.5 rounded" style={{color:cp?"var(--ac)":"var(--t2)",background:"var(--bg2)"}}>{cp?"Copied!":"Copy"}</button></div><pre className="p-3 overflow-x-auto" style={{background:"var(--bg0)",margin:0}}><code className="font-mono text-xs" style={{color:"var(--t1)"}}>{code}</code></pre></div>);
 }
 function Md({text}:{text:string}){
-  const lines=text.split("\n"),out:JSX.Element[]=[];let inC=false,cb:string[]=[],cL="";
-  lines.forEach((l,i)=>{if(l.startsWith("```")){if(inC){out.push(<CodeBlock key={i} code={cb.join("\n")} lang={cL}/>);cb=[];inC=false}else{cL=l.slice(3).trim();inC=true}return}if(inC){cb.push(l);return}if(l.startsWith("### "))out.push(<h3 key={i} className="text-sm font-semibold mt-2 mb-0.5" style={{color:"var(--t0)"}}>{l.slice(4)}</h3>);else if(l.startsWith("## "))out.push(<h2 key={i} className="text-[15px] font-semibold mt-2 mb-0.5" style={{color:"var(--t0)"}}>{l.slice(3)}</h2>);else if(l.startsWith("# "))out.push(<h1 key={i} className="text-base font-bold mt-2 mb-1" style={{color:"var(--t0)"}}>{l.slice(2)}</h1>);else if(l.startsWith("- ")||l.startsWith("* "))out.push(<li key={i} className="ml-4 list-disc text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l.slice(2))}</li>);else if(/^\d+\.\s/.test(l))out.push(<li key={i} className="ml-4 list-decimal text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l.replace(/^\d+\.\s/,""))}</li>);else if(l.startsWith("> "))out.push(<blockquote key={i} className="text-sm italic my-1 pl-3" style={{borderLeft:"2px solid var(--acd)",color:"var(--t2)"}}>{l.slice(2)}</blockquote>);else if(l.trim()==="")out.push(<div key={i} className="h-1"/>);else out.push(<p key={i} className="text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l)}</p>)});
-  if(inC&&cb.length)out.push(<CodeBlock key="last" code={cb.join("\n")} lang={cL}/>);return<div>{out}</div>;
+  const lines=text.split("\n"),out:JSX.Element[]=[];let inC=false,cb:string[]=[],cL="",tbl:string[][]=[];
+  const flushTable=(key:number)=>{
+    if(tbl.length<2)return;
+    const hdr=tbl[0];const rows=tbl.slice(2);
+    out.push(
+      <div key={key} className="overflow-x-auto my-2">
+        <table className="w-full text-sm" style={{borderCollapse:"collapse"}}>
+          <thead><tr>{hdr.map((h,j)=><th key={j} className="text-left px-3 py-1.5 font-medium" style={{color:"var(--t0)",borderBottom:"1px solid var(--brd)"}}>{inl(h.trim())}</th>)}</tr></thead>
+          <tbody>{rows.map((r,ri)=><tr key={ri}>{r.map((c,ci)=><td key={ci} className="px-3 py-1.5" style={{color:"var(--t1)",borderBottom:"1px solid var(--brd)"}}>{inl(c.trim())}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    );
+    tbl=[];
+  };
+  lines.forEach((l,i)=>{
+    if(l.startsWith("```")){flushTable(i-1);if(inC){out.push(<CodeBlock key={i} code={cb.join("\n")} lang={cL}/>);cb=[];inC=false;}else{cL=l.slice(3).trim();inC=true;}return;}
+    if(inC){cb.push(l);return;}
+    if(l.trim().startsWith("|")&&l.trim().endsWith("|")){
+      const cells=l.split("|").slice(1,-1);
+      if(cells.every(c=>/^[\s-:]+$/.test(c))){tbl.push(cells);return;}
+      tbl.push(cells);return;
+    }else if(tbl.length>0){flushTable(i-1);}
+    if(l.startsWith("### "))out.push(<h3 key={i} className="text-sm font-semibold mt-2 mb-0.5" style={{color:"var(--t0)"}}>{l.slice(4)}</h3>);
+    else if(l.startsWith("## "))out.push(<h2 key={i} className="text-[15px] font-semibold mt-2 mb-0.5" style={{color:"var(--t0)"}}>{l.slice(3)}</h2>);
+    else if(l.startsWith("# "))out.push(<h1 key={i} className="text-base font-bold mt-2 mb-1" style={{color:"var(--t0)"}}>{l.slice(2)}</h1>);
+    else if(l.startsWith("---"))out.push(<hr key={i} className="my-2" style={{border:"none",borderTop:"1px solid var(--brd)"}}/>);
+    else if(l.startsWith("- ")||l.startsWith("* "))out.push(<li key={i} className="ml-4 list-disc text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l.slice(2))}</li>);
+    else if(/^\d+\.\s/.test(l))out.push(<li key={i} className="ml-4 list-decimal text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l.replace(/^\d+\.\s/,""))}</li>);
+    else if(l.startsWith("> "))out.push(<blockquote key={i} className="text-sm italic my-1 pl-3" style={{borderLeft:"2px solid var(--acd)",color:"var(--t2)"}}>{l.slice(2)}</blockquote>);
+    else if(l.trim()==="")out.push(<div key={i} className="h-1"/>);
+    else out.push(<p key={i} className="text-sm leading-relaxed" style={{color:"var(--t1)"}}>{inl(l)}</p>);
+  });
+  flushTable(lines.length);
+  if(inC&&cb.length)out.push(<CodeBlock key="last" code={cb.join("\n")} lang={cL}/>);
+  return<div>{out}</div>;
 }
 function inl(t:string):React.ReactNode{return t.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).map((p,i)=>{if(p.startsWith("**")&&p.endsWith("**"))return<strong key={i} style={{color:"var(--t0)"}}>{p.slice(2,-2)}</strong>;if(p.startsWith("*")&&p.endsWith("*"))return<em key={i}>{p.slice(1,-1)}</em>;if(p.startsWith("`")&&p.endsWith("`"))return<code key={i} className="font-mono text-[0.82em] px-1 py-0.5 rounded" style={{background:"rgba(255,255,255,0.04)",color:"var(--ac)"}}>{p.slice(1,-1)}</code>;return p})}
 
 function PulseDots(){return<div className="flex gap-1.5">{[0,1,2].map(i=><div key={i} className="pdot" style={{animationDelay:`${i*0.2}s`}}/>)}</div>}
 function DnaHelix(){return<div className="flex gap-1.5 items-center h-6">{[0,1,2,3,4].map(i=><div key={i} className="flex flex-col items-center gap-1"><div className="dna-t" style={{animationDelay:`${i*0.15}s`}}/><div className="dna-b" style={{animationDelay:`${i*0.15}s`}}/></div>)}</div>}
 
-function ChatMessage({m,style,onLongPress}:{m:Msg;style:string;onLongPress:(m:Msg,e:React.TouchEvent|React.MouseEvent)=>void}){
-  const isU=m.role==="user";const time=new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-  const av=<AetherLogo size={18}/>;const timerRef=useRef<NodeJS.Timeout|null>(null);
+function ChatMessage({m,style,onLongPress,isNew}:{m:Msg;style:string;onLongPress:(m:Msg,e:React.TouchEvent|React.MouseEvent)=>void;isNew?:boolean}){
+  const isU=m.role==="user";
+  const time=new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  const [revealed,setRevealed]=useState(isU||!isNew?m.content:"");
+  const [done,setDone]=useState(isU||!isNew);
+  useEffect(()=>{
+    if(isU||!isNew||done)return;
+    const words=m.content.split(" ");
+    let idx=0;setRevealed(words[0]||"");
+    const t=setInterval(()=>{
+      idx++;
+      if(idx>=words.length){setRevealed(m.content);setDone(true);clearInterval(t);}
+      else setRevealed(words.slice(0,idx+1).join(" "));
+    },30);
+    return()=>clearInterval(t);
+  },[m.content,isU,isNew,done]);
+  const displayText=done?m.content:revealed;
+  const av=<AetherLogo size={18}/>;
+  const timerRef=useRef<NodeJS.Timeout|null>(null);
   const handleDown=(e:React.TouchEvent|React.MouseEvent)=>{if(isU)return;timerRef.current=setTimeout(()=>onLongPress(m,e),500)};
   const handleUp=()=>{if(timerRef.current)clearTimeout(timerRef.current)};
   const wrap=(ch:React.ReactNode)=><div onTouchStart={handleDown} onTouchEnd={handleUp} onMouseDown={handleDown} onMouseUp={handleUp} onMouseLeave={handleUp}>{ch}</div>;
 
-  if(style==="gradient")return wrap(<div>{isU?<div className="text-right py-1"><span className="text-sm" style={{color:"var(--t1)"}}>{m.content}</span></div>:<div className="py-2 px-3 rounded-lg" style={{background:"linear-gradient(90deg,var(--acg) 0%,transparent 4%)"}}><div className="flex items-center gap-1.5 mb-1">{av}<span className="font-display text-[10px] font-medium" style={{color:"var(--t1)"}}>Aether</span><span className="text-[8px]" style={{color:"var(--t2)"}}>{time}</span></div><Md text={m.content}/></div>}</div>);
-  if(style==="slack")return wrap(<div className="flex gap-2 py-1">{isU?<div className="h-5 w-5 rounded-md flex items-center justify-center text-[8px] font-bold shrink-0" style={{background:"var(--bg3)",color:"var(--t2)"}}>{ME.name[0]}</div>:av}<div><div className="flex items-center gap-1.5"><span className="text-[10px] font-semibold" style={{color:isU?"var(--t2)":"var(--ac)"}}>{isU?"You":"Aether"}</span><span className="text-[8px]" style={{color:"var(--t2)"}}>{time}</span></div>{isU?<p className="text-sm" style={{color:"var(--t1)"}}>{m.content}</p>:<Md text={m.content}/>}</div></div>);
-  if(style==="gpt")return wrap(<div className="py-2 px-3 rounded-lg" style={isU?{}:{background:"var(--acg)"}}>{!isU&&<div className="flex items-center gap-1.5 mb-1">{av}<span className="text-[10px] font-semibold" style={{color:"var(--ac)"}}>Aether</span></div>}{isU?<p className="text-sm" style={{color:"var(--t1)"}}>{m.content}</p>:<Md text={m.content}/>}</div>);
-  if(style==="naked")return wrap(<div>{isU?<div className="text-right py-1"><span className="text-sm" style={{color:"var(--t2)"}}>{m.content}</span></div>:<div className="py-1 pl-3" style={{borderLeft:"2px solid var(--ac)"}}><Md text={m.content}/></div>}</div>);
-  if(style==="terminal")return wrap(<div className="font-mono text-xs py-0.5">{isU?<div><span style={{color:"var(--ac)"}}>you &gt;</span> <span style={{color:"var(--t2)"}}>{m.content}</span></div>:<div><span style={{color:"var(--ac)"}}>aether &gt;</span> <Md text={m.content}/></div>}</div>);
-  return wrap(<div className={`max-w-[85%] ${isU?"ml-auto":""}`}><div className="px-3 py-2 text-sm" style={isU?{background:"var(--acg)",borderRadius:"14px 14px 4px 14px",color:"var(--t0)"}:{background:"var(--bg2)",borderRadius:"14px 14px 14px 4px"}}>{isU?m.content:<Md text={m.content}/>}</div></div>);
+  if(style==="gradient")return wrap(<div>{isU?<div className="text-right py-1"><span className="text-sm" style={{color:"var(--t1)"}}>{m.content}</span></div>:<div className="py-2 px-3 rounded-lg" style={{background:"linear-gradient(90deg,var(--acg) 0%,transparent 4%)"}}><div className="flex items-center gap-1.5 mb-1">{av}<span className="font-display text-[10px] font-medium" style={{color:"var(--t1)"}}>Aether</span><span className="text-[8px]" style={{color:"var(--t2)"}}>{time}</span></div><Md text={displayText}/></div>}</div>);
+  if(style==="slack")return wrap(<div className="flex gap-2 py-1">{isU?<div className="h-5 w-5 rounded-md flex items-center justify-center text-[8px] font-bold shrink-0" style={{background:"var(--bg3)",color:"var(--t2)"}}>{ME.name[0]}</div>:av}<div><div className="flex items-center gap-1.5"><span className="text-[10px] font-semibold" style={{color:isU?"var(--t2)":"var(--ac)"}}>{isU?"You":"Aether"}</span><span className="text-[8px]" style={{color:"var(--t2)"}}>{time}</span></div>{isU?<p className="text-sm" style={{color:"var(--t1)"}}>{m.content}</p>:<Md text={displayText}/>}</div></div>);
+  if(style==="gpt")return wrap(<div className="py-2 px-3 rounded-lg" style={isU?{}:{background:"var(--acg)"}}>{!isU&&<div className="flex items-center gap-1.5 mb-1">{av}<span className="text-[10px] font-semibold" style={{color:"var(--ac)"}}>Aether</span></div>}{isU?<p className="text-sm" style={{color:"var(--t1)"}}>{m.content}</p>:<Md text={displayText}/>}</div>);
+  if(style==="naked")return wrap(<div>{isU?<div className="text-right py-1"><span className="text-sm" style={{color:"var(--t2)"}}>{m.content}</span></div>:<div className="py-1 pl-3" style={{borderLeft:"2px solid var(--ac)"}}><Md text={displayText}/></div>}</div>);
+  if(style==="terminal")return wrap(<div className="font-mono text-xs py-0.5">{isU?<div><span style={{color:"var(--ac)"}}>you &gt;</span> <span style={{color:"var(--t2)"}}>{m.content}</span></div>:<div><span style={{color:"var(--ac)"}}>aether &gt;</span> <Md text={displayText}/></div>}</div>);
+  return wrap(<div className={`max-w-[85%] ${isU?"ml-auto":""}`}><div className="px-3 py-2 text-sm" style={isU?{background:"var(--acg)",borderRadius:"14px 14px 4px 14px",color:"var(--t0)"}:{background:"var(--bg2)",borderRadius:"14px 14px 14px 4px"}}>{isU?m.content:<Md text={displayText}/>}</div></div>);
 }
 
 export default function Home(){
@@ -75,6 +123,7 @@ export default function Home(){
   const[sheetOpen,setSheetOpen]=useState(false);
   const[modePopup,setModePopup]=useState<typeof MODES[0]|null>(null);
   const[ctxMenu,setCtxMenu]=useState<{msg:Msg;y:number}|null>(null);
+  const[confirmDialog,setConfirmDialog]=useState<{text:string;onOk:()=>void}|null>(null);
   const[scrolled,setScrolled]=useState(false);
 
   const[chatMsgs,setChatMsgs]=useState<Msg[]>([]);
@@ -145,46 +194,58 @@ export default function Home(){
       <div className="pgIn flex flex-col h-full">
         {!isCode&&<div className="flex items-center justify-between mb-2 px-1">
           <div className="flex gap-1 overflow-x-auto no-scrollbar">{MODES.map(m=><button key={m.id} onClick={()=>trySetMode(m)} className={`mpill shrink-0 ${mode.id===m.id?"on":""}`}><span className="mr-1">{m.icon}</span><span className="hidden sm:inline">{m.label}</span></button>)}</div>
-          {curMsgs.length>0&&<div className="flex gap-1 shrink-0"><button onClick={expPDF} className="mpill text-[10px]">PDF</button><button onClick={expXL} className="mpill text-[10px]">XLS</button><button onClick={()=>{if(confirm("Clear?"))setCur([])}} className="mpill text-[10px]">✕</button></div>}
+          {curMsgs.length>0&&<div className="flex gap-1 shrink-0"><button onClick={expPDF} className="mpill text-[10px]">PDF</button><button onClick={expXL} className="mpill text-[10px]">XLS</button><button onClick={()=>setConfirmDialog({text:"Clear this conversation?",onOk:()=>{setCur([]);setConfirmDialog(null)}})} className="mpill text-[10px]">✕</button></div>}
         </div>}
-        {isCode&&<div className="flex items-center justify-between mb-2 px-1"><p className="font-body text-[11px]" style={{color:"var(--t2)"}}>⌘ Code generation & debugging</p>{curMsgs.length>0&&<div className="flex gap-1"><button onClick={expPDF} className="mpill text-[10px]">PDF</button><button onClick={()=>{if(confirm("Clear?"))setCur([])}} className="mpill text-[10px]">✕</button></div>}</div>}
+        {isCode&&<div className="flex items-center justify-between mb-2 px-1"><p className="font-body text-[11px]" style={{color:"var(--t2)"}}>⌘ Code generation & debugging</p>{curMsgs.length>0&&<div className="flex gap-1"><button onClick={expPDF} className="mpill text-[10px]">PDF</button><button onClick={()=>setConfirmDialog({text:"Clear this conversation?",onOk:()=>{setCur([]);setConfirmDialog(null)}})} className="mpill text-[10px]">✕</button></div>}</div>}
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-1 pr-1 pb-3" onScroll={handleScroll}>
-          {curMsgs.length===0&&!busy&&(
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="mb-4">{isCode?<div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl" style={{background:"var(--acg)",color:"var(--ac)"}}>⌘</div>:<AetherLogo size={48}/>}</div>
-              <h2 className="font-display text-lg font-semibold mb-1" style={{color:"var(--t1)"}}>{isCode?"Code anything":"What can I help with?"}</h2>
-              <p className="font-body text-xs text-center max-w-sm mb-5" style={{color:"var(--t2)"}}>{isCode?"Write, debug, refactor. Production-grade.":"Ask anything. English or Telugu. Speak or type."}</p>
-              <div className="grid grid-cols-2 gap-2 max-w-md w-full px-4">{(isCode?CODE_STARTERS:STARTERS).map(s=><button key={s} onClick={()=>sendMsg(s,isCode?"code":undefined)} className="glass px-3 py-2.5 text-left text-xs hover:border-[var(--brdh)]" style={{color:"var(--t2)"}}>{s}</button>)}</div>
-            </div>
-          )}
-          {curMsgs.map((m,i)=><ChatMessage key={i} m={m} style={chatStyle.id} onLongPress={handleLongPress}/>)}
-          {busy&&(
-            <div className="flex flex-col items-start gap-1 py-2 px-1">
-              <div className="flex items-center gap-2"><Loader/><span className="font-mono text-[10px] animate-pulse" style={{color:"var(--t2)"}}>{isCode?"Generating...":mode.id==="beast"?"Deep processing...":"Thinking..."}</span></div>
-              <div className="w-32"><SineWave/></div>
-            </div>
-          )}
-          {err&&errBox(err)}
-          <div ref={chatEnd}/>
-        </div>
-
-        {/* Input — full bar takeover when listening */}
-        {isListening?(
-          <div className="glass p-2 mb-1" style={{paddingBottom:"calc(0.5rem + env(safe-area-inset-bottom))"}}>
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{background:"var(--ac)"}}>
-              <EqBars/>
-              {interimText&&<span className="font-body text-xs truncate max-w-[180px]" style={{color:"var(--bg0)",opacity:0.8}}>{interimText}</span>}
-              <button onClick={stopVoice} className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:"var(--bg0)"}}><div className="h-3 w-3 rounded-sm" style={{background:"var(--ac)"}}/></button>
-            </div>
+        {curMsgs.length===0&&!busy?(
+          <div className="flex-1 flex flex-col items-center justify-center px-4" style={{marginBottom:"-2rem"}}>
+              <div className="mb-6">{isCode?<div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl" style={{background:"var(--acg)",color:"var(--ac)"}}>⌘</div>:<AetherLogo size={48}/>}</div>
+              {isCode?<>
+                <h2 className="font-display text-lg font-semibold mb-1" style={{color:"var(--t1)"}}>Code anything</h2>
+                <p className="font-body text-xs text-center max-w-sm mb-5" style={{color:"var(--t2)"}}>Write, debug, refactor. Production-grade.</p>
+                <div className="flex flex-wrap gap-2 justify-center mb-6">{CODE_STARTERS.map(s=><button key={s} onClick={()=>sendMsg(s,"code")} className="glass px-4 py-2 rounded-full text-xs hover:border-[var(--brdh)] transition-all" style={{color:"var(--t2)"}}>{s}</button>)}</div>
+              </>:<>
+                <h2 className="font-display text-lg font-semibold mb-1" style={{color:"var(--t1)"}}>{new Date().getHours()<12?"Good morning":new Date().getHours()<17?"Good afternoon":"Good evening"}, {ME.name.split(" ")[0]}</h2>
+                <p className="font-body text-xs text-center max-w-sm mb-5" style={{color:"var(--t2)"}}>{new Date().getHours()<12?"What would you like to accomplish today?":new Date().getHours()<17?"How can I help this afternoon?":"What would you like to explore tonight?"}</p>
+                <div className="flex flex-wrap gap-2 justify-center mb-6">
+                  {(new Date().getHours()<12?["Plan my day productively","Summarize latest tech news","Write a morning journal prompt","Quick coding challenge"]:new Date().getHours()<17?["Debug this code for me","Draft a professional email","Explain a concept simply","Compare two technologies"]:["Recommend books to read","Teach me something new","Help me plan tomorrow","Write a creative story"]).map(s=><button key={s} onClick={()=>sendMsg(s)} className="glass px-4 py-2 rounded-full text-xs hover:border-[var(--brdh)] transition-all" style={{color:"var(--t2)"}}>{s}</button>)}
+                </div>
+              </>}
+              {/* Input centered with greeting */}
+              <div className="w-full max-w-2xl glass p-2 flex items-end gap-2">
+                <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg(undefined,isCode?"code":undefined)}}} placeholder={isCode?"Describe what to build...":"Ask anything..."} rows={1} className={`flex-1 resize-none rounded-xl px-3.5 py-2.5 ${isCode?"font-mono":"font-body"} text-sm`} style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+                <button onClick={()=>startVoice()} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}}><MicIcon/></button>
+                <button onClick={()=>startVoice("te-IN")} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}}><span className="text-[10px] font-bold">తె</span></button>
+                <button onClick={()=>sendMsg(undefined,isCode?"code":undefined)} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{isCode?"Run":"Send"}</button>
+              </div>
           </div>
         ):(
-          <div className="glass p-2 flex items-end gap-2 mb-1" style={{paddingBottom:"calc(0.5rem + env(safe-area-inset-bottom))"}}>
-            <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg(undefined,isCode?"code":undefined)}}} placeholder={isCode?"Describe what to build...":"Ask anything..."} rows={1} className={`flex-1 resize-none rounded-xl px-3.5 py-2.5 ${isCode?"font-mono":"font-body"} text-sm`} style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
-            <button onClick={()=>startVoice()} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="English"><MicIcon/></button>
-            <button onClick={()=>startVoice("te-IN")} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Telugu"><span className="text-[10px] font-bold">తె</span></button>
-            <button onClick={()=>sendMsg(undefined,isCode?"code":undefined)} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{busy?"...":isCode?"Run":"Send"}</button>
+          <>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-1 pr-1 pb-3" onScroll={handleScroll}>
+              {curMsgs.map((m,i)=><ChatMessage key={i} m={m} style={chatStyle.id} onLongPress={handleLongPress} isNew={m.role==="assistant"&&i===curMsgs.length-1}/>)}
+              {busy&&(
+                <div className="flex items-center gap-2.5 py-2 px-1">
+                  <Loader/>
+                  <span className="font-mono text-[10px] animate-pulse" style={{color:"var(--t2)"}}>{isCode?"Generating...":mode.id==="beast"?"Deep processing...":mode.id==="swift"?"On it...":"Thinking..."}</span>
+                </div>
+              )}
+              {err&&errBox(err)}
+              <div ref={chatEnd}/>
           </div>
+          {isListening?(
+            <div className="glass p-2 mb-1" style={{paddingBottom:"calc(0.5rem + env(safe-area-inset-bottom))"}}>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{background:"var(--ac)"}}><EqBars/>{interimText&&<span className="font-body text-xs truncate max-w-[180px]" style={{color:"var(--bg0)",opacity:0.8}}>{interimText}</span>}<button onClick={stopVoice} className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:"var(--bg0)"}}><div className="h-3 w-3 rounded-sm" style={{background:"var(--ac)"}}/></button></div>
+            </div>
+          ):(
+            <div className="glass p-2 flex items-end gap-2 mb-1" style={{paddingBottom:"calc(0.5rem + env(safe-area-inset-bottom))"}}>
+              <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg(undefined,isCode?"code":undefined)}}} placeholder={isCode?"Describe what to build...":"Ask anything..."} rows={1} className={`flex-1 resize-none rounded-xl px-3.5 py-2.5 ${isCode?"font-mono":"font-body"} text-sm`} style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+              <button onClick={()=>startVoice()} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}}><MicIcon/></button>
+              <button onClick={()=>startVoice("te-IN")} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}}><span className="text-[10px] font-bold">తె</span></button>
+              <button onClick={()=>sendMsg(undefined,isCode?"code":undefined)} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{busy?"...":isCode?"Run":"Send"}</button>
+            </div>
+          )}
+          </>
         )}
       </div>
     );
@@ -197,6 +258,19 @@ export default function Home(){
 
       {/* Long-press context menu */}
       {ctxMenu&&(<><div className="fixed inset-0 z-50" onClick={()=>setCtxMenu(null)}/><div className="ctx-menu fixed z-50 flex gap-1" style={{top:ctxMenu.y-40,left:16,right:16}}>{["Copy","Regenerate"].map(a=><button key={a} onClick={()=>{if(a==="Copy")navigator.clipboard.writeText(ctxMenu.msg.content);if(a==="Regenerate"){const last=msgs.filter(m=>m.role==="user").pop();if(last)sendMsg(last.content)}setCtxMenu(null)}} className="glass px-3 py-2 text-xs" style={{color:"var(--t1)"}}>{a}</button>)}</div></>)}
+
+      {/* Confirm dialog */}
+      {confirmDialog&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)"}} onClick={()=>setConfirmDialog(null)}>
+          <div className="glass px-6 py-5 max-w-xs text-center pgIn" onClick={e=>e.stopPropagation()}>
+            <p className="font-body text-sm mb-4" style={{color:"var(--t0)"}}>{confirmDialog.text}</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={()=>setConfirmDialog(null)} className="px-5 py-2 rounded-xl font-body text-sm" style={{background:"var(--bg2)",color:"var(--t2)",border:"1px solid var(--brd)"}}>Cancel</button>
+              <button onClick={confirmDialog.onOk} className="btn px-5 py-2 text-sm">Clear</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mode popup — full takeover */}
       {modePopup&&(<div className="fixed inset-0 z-50 flex flex-col items-center justify-center" style={{background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)"}} onClick={()=>setModePopup(null)}><div className="pgIn text-center" onClick={e=>e.stopPropagation()}><div className="text-5xl mb-4">{modePopup.icon}</div><h2 className="font-display text-xl font-semibold mb-1" style={{color:"var(--ac)"}}>{modePopup.label} mode</h2><p className="font-body text-sm mb-1" style={{color:"var(--t1)"}}>{modePopup.desc}</p><p className="font-body text-xs mb-6" style={{color:"var(--t2)"}}>Session will be cleared</p><div className="flex gap-3 justify-center"><button onClick={()=>setModePopup(null)} className="px-6 py-2.5 rounded-xl font-body text-sm" style={{background:"var(--bg2)",color:"var(--t2)",border:"1px solid var(--brd)"}}>Cancel</button><button onClick={confirmModeSwitch} className="btn px-6 py-2.5 text-sm">Activate</button></div></div></div>)}
