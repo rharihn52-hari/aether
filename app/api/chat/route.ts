@@ -92,13 +92,13 @@ function cleanAds(text: string): string {
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/\n*---\n*\*?This (?:response|text|content) was generated.*$/gis, "")
-    .replace(/\n*---\n*Powered by Pollinations.*$/gis, "")
-    .replace(/\n*\*?Generated (?:by|with|using) Pollinations.*$/gis, "")
+    .replace(/\n*---\n*\*?This (?:response|text|content) was generated[\s\S]*$/gim, "")
+    .replace(/\n*---\n*Powered by Pollinations.*$/gim, "")
+    .replace(/\n*\*?Generated (?:by|with|using) Pollinations.*$/gim, "")
     .replace(/\n*🌸.*Pollinations.*$/gim, "")
     .replace(/pollinations\.ai/gi, "")
     .replace(/\n*Made with .*Pollinations.*$/gim, "")
-    .replace(/\n*---\n*\*?Support (?:free|open).*AI.*$/gis, "")
+    .replace(/\n*---\n*\*?Support (?:free|open).*AI.*$/gim, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
