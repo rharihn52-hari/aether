@@ -87,3 +87,6 @@ textarea:focus,input:focus{outline:none;border-color:var(--acd)!important;box-sh
 .md ul,.md ol{padding-left:1.3em;margin:0.3em 0}.md li{color:var(--t1);line-height:1.7;font-size:13px;margin:0.1em 0}
 .md blockquote{border-left:2px solid var(--acd);padding-left:10px;color:var(--t2);font-style:italic;margin:0.4em 0;font-size:13px}
 .md strong{color:var(--t0);font-weight:600}
+
+/* Voice equalizer bars */
+@keyframes eqBar{0%,100%{height:4px}50%{height:20px}}
