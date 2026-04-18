@@ -15,7 +15,7 @@ const MODE_CONFIG: Record<string, { model: string; instruction: string }> = {
   },
   code: {
     model: "openai",
-    instruction: "If asking for code: start with code block immediately. Production-grade TypeScript with types, error handling, comments. If general question: answer in plain markdown. NEVER show planning steps.",
+    instruction: "If asking for code: start with code block immediately. If general question: plain markdown. NEVER show planning.",
   },
   search: {
     model: "openai",
@@ -23,71 +23,84 @@ const MODE_CONFIG: Record<string, { model: string; instruction: string }> = {
   },
 };
 
-function detectLanguage(text: string): { isTelugu: boolean; isHindi: boolean; isNonLatin: boolean } {
-  return {
-    isTelugu: /[\u0C00-\u0C7F]/.test(text),
-    isHindi: /[\u0900-\u097F]/.test(text),
-    isNonLatin: /[^\x00-\x7F]/.test(text),
-  };
+function detectLanguage(text: string): string {
+  if (/[\u0C00-\u0C7F]/.test(text)) return "telugu";
+  if (/[\u0900-\u097F]/.test(text)) return "hindi";
+  return "english";
 }
 
-function getTeluguPrompt(): string {
-  return `
-
-CRITICAL — USER IS WRITING IN TELUGU. YOU MUST:
-1. Reply ONLY in proper Telugu script (తెలుగు లిపి). NEVER use English transliteration.
-2. Use CORRECT Telugu grammar (వ్యాకరణం):
-   - Proper విభక్తి ప్రత్యయాలు (case endings): -కి, -ని, -లో, -తో, -కు, -న, -యందు
-   - Correct క్రియా రూపాలు (verb conjugation): చేస్తాను, చేస్తారు, చేశాడు, చేయవచ్చు, చేయగలరు, చేయాలి
-   - Proper సర్వనామాలు: నేను, నువ్వు/మీరు, అతను/ఆమె, మేము, వారు
-   - SOV word order: కర్త + కర్మ + క్రియ (Subject + Object + Verb)
-   - Proper postpositions: మీద, కింద, వెనుక, ముందు, లోపల, బయట
-   - Correct sandhi rules: అ+ఆ=ఆ, ఇ+ఇ=ఈ etc.
-3. Write natural fluent Telugu as spoken in Telangana/Andhra Pradesh.
-4. For tech terms with no Telugu equivalent, keep English but write everything else in Telugu.
-5. NEVER produce broken Telugu like "రియాక్ట్ ఒక లైబ్రరీ ఉంది" — correct form is "రియాక్ట్ అనేది ఒక లైబ్రరీ".
-6. Use proper connectors: అయితే, కానీ, మరియు, లేదా, ఎందుకంటే, అందువల్ల, కాబట్టి.`;
+function getLanguagePrompt(lang: string): string {
+  if (lang === "telugu") return ` Reply ENTIRELY in Telugu script (తెలుగు లిపి). Proper Telugu grammar with correct విభక్తి ప్రత్యయాలు and క్రియా రూపాలు. SOV word order. No English except tech terms. Write naturally as a Telugu speaker.`;
+  if (lang === "hindi") return ` Reply ENTIRELY in Hindi Devanagari. Proper grammar. No English except tech terms.`;
+  return "";
 }
 
-function getHindiPrompt(): string {
-  return `
-
-CRITICAL — USER IS WRITING IN HINDI. YOU MUST:
-1. Reply ONLY in proper Hindi Devanagari script. NEVER transliterate.
-2. Use correct Hindi grammar with proper कारक चिह्न, क्रिया रूप, and sentence structure.
-3. Write natural fluent Hindi. For tech terms, keep English but write the rest in Hindi.`;
-}
-
-function cleanResponse(text: string): string {
-  let cleaned = text;
-  const adPatterns = [
-    /\n*---\n*\*?This (?:response|text|content) was generated (?:by|using|with) Pollinations.*$/gis,
-    /\n*---\n*Powered by Pollinations.*$/gis,
-    /\n*\*?Generated (?:by|with|using) Pollinations.*$/gis,
-    /\n*🌸.*Pollinations.*$/gim,
-    /\n*\[.*pollinations.*\].*$/gim,
-    /pollinations\.ai/gi,
-    /\n*---\n*\*?Support (?:free|open).*AI.*$/gis,
-    /\n*Made with .*Pollinations.*$/gim,
-  ];
-  for (const pat of adPatterns) cleaned = cleaned.replace(pat, "");
-
-  const lines = cleaned.split("\n");
-  const result: string[] = [];
-  let inCode = false;
-  for (const line of lines) {
-    const t = line.trimStart();
-    if (t.startsWith("```")) { inCode = !inCode; result.push(line); continue; }
-    if (inCode) { result.push(line); continue; }
-    if (/^(We need to|Let's |Let us |I need to|I will |I'll |Should |Also |Maybe |Ok\.|Okay\.|Proceed|That might|Simpler:|Parameters:|Return:|Implement |But question|Will |Going to|First,? (?:we|I)|Next,? (?:we|I)|Now,? (?:we|I))/i.test(t)) continue;
-    if (/^(tsCopy|jsCopy|Copy)$/i.test(t)) continue;
-    if (t.endsWith("?") && t.length < 80 && !t.startsWith("#") && !t.startsWith("-") && !t.startsWith("*")) continue;
-    if (/^(Yes\.|No\.|Ok |Okay |Sure|Right|Hmm|Well,)/i.test(t) && t.length < 30) continue;
-    if (/^let'?s\s+(produce|craft|create|build|write|make|design|implement|do|start|begin|go)/i.test(t)) continue;
-    result.push(line);
+// Instead of matching thinking patterns, find where REAL content starts
+function stripThinking(text: string): string {
+  const lines = text.split("\n");
+  
+  // Find the first line that looks like ACTUAL content (not thinking)
+  let contentStart = -1;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t) continue;
+    
+    // These are DEFINITE content markers
+    if (t.startsWith("# ") || t.startsWith("## ") || t.startsWith("### ")) { contentStart = i; break; }
+    if (t.startsWith("```")) { contentStart = i; break; }
+    if (t.startsWith("---")) { contentStart = i; break; }
+    
+    // Telugu/Hindi content (starts with native script, not English thinking)
+    if (/^[\u0C00-\u0C7F]/.test(t) && t.length > 20) { contentStart = i; break; }
+    if (/^[\u0900-\u097F]/.test(t) && t.length > 20) { contentStart = i; break; }
+    
+    // Numbered list with real content (not "1. Think about..." but "1. **Title**")
+    if (/^\d+\.\s+\*\*/.test(t)) { contentStart = i; break; }
+    if (/^\d+\.\s+[\u0C00-\u0C7F]/.test(t)) { contentStart = i; break; }
+    
+    // Bullet points with real content
+    if (/^[-*]\s+\*\*/.test(t)) { contentStart = i; break; }
+    if (/^[-*]\s+[\u0C00-\u0C7F]/.test(t)) { contentStart = i; break; }
+    
+    // Bold text start (likely a section heading)
+    if (t.startsWith("**") && t.includes("**") && t.length > 5) { contentStart = i; break; }
+    
+    // Long paragraph (>120 chars) that doesn't start with thinking words
+    if (t.length > 120 && !/^(We |I |Let|Should|Maybe|Perhaps|Ok|Actually|Better|User|So |Thus |Given |For a|Thinking|Could|Would|The user)/i.test(t)) {
+      contentStart = i; break;
+    }
+    
+    // Medium paragraph that starts with a real word (not thinking)
+    if (t.length > 60 && /^(Here|This|The |A |An |In |To |For |When|If |You|There|It |That|These|Those|One|Two|Three|Four|Five)/i.test(t)) {
+      contentStart = i; break;
+    }
   }
-  cleaned = result.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  return cleaned || text;
+  
+  // If no content marker found, return everything (better than nothing)
+  if (contentStart === -1) return text;
+  
+  // Return from content start
+  return lines.slice(contentStart).join("\n").trim();
+}
+
+function cleanAds(text: string): string {
+  return text
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|span|b|i|em|strong|a|ul|ol|li|h[1-6])[^>]*>/gi, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n*---\n*\*?This (?:response|text|content) was generated.*$/gis, "")
+    .replace(/\n*---\n*Powered by Pollinations.*$/gis, "")
+    .replace(/\n*\*?Generated (?:by|with|using) Pollinations.*$/gis, "")
+    .replace(/\n*🌸.*Pollinations.*$/gim, "")
+    .replace(/pollinations\.ai/gi, "")
+    .replace(/\n*Made with .*Pollinations.*$/gim, "")
+    .replace(/\n*---\n*\*?Support (?:free|open).*AI.*$/gis, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function extractText(raw: string): string {
@@ -99,72 +112,66 @@ function extractText(raw: string): string {
     else if (typeof json?.reasoning_content === "string" && json.reasoning_content.length > 0) text = json.reasoning_content;
     else text = raw;
   } catch { text = raw; }
-  return cleanResponse(text);
-}
-
-async function tryPost(messages: any[], model: string, timeout: number): Promise<string | null> {
-  try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), timeout);
-    const res = await fetch("https://text.pollinations.ai/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, model, stream: false }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(to);
-    console.log(`[Aether] POST status: ${res.status}`);
-    if (!res.ok) return null;
-    const raw = await res.text();
-    const text = extractText(raw);
-    return (text && text.trim().length > 0) ? text : null;
-  } catch (e: any) { console.log(`[Aether] POST error: ${e?.message}`); return null; }
-}
-
-async function tryGet(prompt: string, system: string, model: string, timeout: number): Promise<string | null> {
-  try {
-    const params = new URLSearchParams({ model, system: system.slice(0, 300) });
-    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt.slice(0, 500))}?${params}`;
-    if (url.length > 2000) return null;
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), timeout);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(to);
-    console.log(`[Aether] GET status: ${res.status}`);
-    if (!res.ok) return null;
-    const raw = await res.text();
-    const text = extractText(raw);
-    return (text && text.trim().length > 0) ? text : null;
-  } catch (e: any) { console.log(`[Aether] GET error: ${e?.message}`); return null; }
+  
+  // Step 1: Strip thinking/planning from start
+  text = stripThinking(text);
+  // Step 2: Clean ads and HTML
+  text = cleanAds(text);
+  
+  return text;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const { messages, mode } = await req.json();
     if (!messages?.length) return NextResponse.json({ error: "Messages required" }, { status: 400 });
+
     const config = MODE_CONFIG[mode] || MODE_CONFIG.think;
     const lastUser = [...messages].reverse().find((m: any) => m.role === "user");
     const prompt = lastUser?.content || "";
     const lang = detectLanguage(prompt);
-    const langPrompt = lang.isTelugu ? getTeluguPrompt() : lang.isHindi ? getHindiPrompt() : "";
-    const sys = `You are Aether AI, designed by Hari Rajanala. ${config.instruction} Output ONLY the final answer. No planning steps.${langPrompt}`;
-    const fullMessages = [{ role: "system", content: sys }, ...messages.map((m: any) => ({ role: m.role, content: m.content }))];
-    console.log(`[Aether] Mode: ${mode} | Telugu: ${lang.isTelugu} | Hindi: ${lang.isHindi}`);
+    const langPrompt = getLanguagePrompt(lang);
 
-    const postResult = await tryPost(fullMessages, config.model, 90000);
-    if (postResult) return NextResponse.json({ content: postResult });
+    const sys = `You are Aether AI, designed by Hari Rajanala. ${config.instruction} Start your response with the actual answer immediately. No thinking process.${langPrompt}`;
 
-    if (!lang.isNonLatin) {
-      const getResult = await tryGet(prompt, sys, config.model, 60000);
-      if (getResult) return NextResponse.json({ content: getResult });
+    const fullMessages = [
+      { role: "system", content: sys },
+      ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+    ];
+
+    console.log(`[Aether] Mode: ${mode} | Lang: ${lang}`);
+
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 90000);
+
+    const res = await fetch("https://text.pollinations.ai/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: fullMessages, model: config.model, stream: false }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+
+    console.log(`[Aether] POST status: ${res.status}`);
+
+    if (!res.ok) {
+      return NextResponse.json({
+        error: "Aether is experiencing high demand. Please wait a moment and try again.",
+      }, { status: 502 });
     }
 
-    try {
-      const bareRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent(prompt.slice(0, 300))}`);
-      if (bareRes.ok) { const raw = await bareRes.text(); const text = extractText(raw); if (text?.trim()) return NextResponse.json({ content: text }); }
-    } catch {}
+    const raw = await res.text();
+    const content = extractText(raw);
+    
+    console.log(`[Aether] Final content (first 100): ${content.slice(0, 100)}`);
 
-    return NextResponse.json({ error: "Aether is experiencing high demand. Please wait a moment and try again." }, { status: 502 });
+    if (!content || content.trim().length < 5) {
+      return NextResponse.json({
+        error: "Aether couldn't generate a response. Please try again.",
+      }, { status: 502 });
+    }
+
+    return NextResponse.json({ content });
   } catch (e: any) {
     if (e?.name === "AbortError") return NextResponse.json({ error: "Response took too long. Try Swift mode." }, { status: 504 });
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });

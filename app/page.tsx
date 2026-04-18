@@ -192,7 +192,7 @@ export default function Home(){
   useEffect(()=>()=>{if(recognitionRef.current)try{recognitionRef.current.stop()}catch{};},[]);
 
   // ── Voice ──
-  const startVoice=()=>{
+  const startVoice=(lang?:string)=>{
     if(typeof window==="undefined")return;
     const SR=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;
     if(!SR){alert("Voice not supported. Use Chrome or Edge.");return;}
@@ -200,7 +200,7 @@ export default function Home(){
     r.continuous=true;
     r.interimResults=true;
     r.maxAlternatives=1;
-    r.lang=""; // empty = auto-detect (handles English + Telugu)
+    r.lang=lang||"en-IN";
     let accumulated="";
     r.onstart=()=>{setIsListening(true);listeningRef.current=true;setInterimText("")};
     r.onresult=(e:any)=>{
@@ -266,26 +266,6 @@ export default function Home(){
 
   const errDisplay=(e:string)=><div className="flex items-center gap-2 py-2 px-3 rounded-lg my-1" style={{background:"rgba(232,85,53,0.06)",border:"1px solid rgba(232,85,53,0.12)"}}><span className="text-xs" style={{color:"#e85535"}}>{e.includes("502")||e.includes("busy")||e.includes("demand")?"Aether is warming up — try again in a moment":e.includes("504")||e.includes("timed")||e.includes("long")?"Taking longer than expected — try Swift mode":e}</span></div>;
 
-  // ── Full bar takeover input ──
-  const VoiceBar=()=>(
-    <div className="card p-2">
-      <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{background:"var(--ac)"}}>
-        <EqBars/>
-        {interimText&&<span className="font-body text-xs truncate max-w-[200px]" style={{color:"var(--bg0)",opacity:0.8}}>{interimText}</span>}
-        <button onClick={stopVoice} className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all hover:opacity-80" style={{background:"var(--bg0)"}} title="Stop listening">
-          <div className="h-3 w-3 rounded-sm" style={{background:"var(--ac)"}}/>
-        </button>
-      </div>
-    </div>
-  );
-
-  const ChatInput=({placeholder,onSend,btnLabel}:{placeholder:string;onSend:()=>void;btnLabel:string})=>(
-    <div className="card p-2 flex items-end gap-2">
-      <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();onSend()}}} placeholder={placeholder} rows={1} className={`flex-1 resize-none rounded-xl px-3.5 py-2.5 ${tab==="code"?"font-mono":"font-body"} text-sm transition-all`} style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
-      <button onClick={startVoice} className="h-10 w-10 rounded-xl flex items-center justify-center transition-all shrink-0 hover:opacity-80" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Voice input"><MicIcon/></button>
-      <button onClick={onSend} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{busy?"...":btnLabel}</button>
-    </div>
-  );
 
   // ── SPLASH ──
   if(splash)return(
@@ -357,7 +337,22 @@ export default function Home(){
             {err&&errDisplay(err)}
             <div ref={chatEnd}/>
           </div>
-          {isListening?<VoiceBar/>:<ChatInput placeholder="Ask anything..." onSend={()=>sendMsg()} btnLabel="Send"/>}
+          {isListening?(
+            <div className="card p-2">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{background:"var(--ac)"}}>
+                <EqBars/>
+                {interimText&&<span className="font-body text-xs truncate max-w-[200px]" style={{color:"var(--bg0)",opacity:0.8}}>{interimText}</span>}
+                <button onClick={stopVoice} className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:"var(--bg0)"}}><div className="h-3 w-3 rounded-sm" style={{background:"var(--ac)"}}/></button>
+              </div>
+            </div>
+          ):(
+            <div className="card p-2 flex items-end gap-2">
+              <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg()}}} placeholder="Ask anything..." rows={1} className="flex-1 resize-none rounded-xl px-3.5 py-2.5 font-body text-sm transition-all" style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+              <button onClick={()=>startVoice()} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Voice (English)"><MicIcon/></button>
+              <button onClick={()=>startVoice("te-IN")} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Voice (Telugu)"><span className="text-[10px] font-bold" style={{color:"var(--t2)"}}>తె</span></button>
+              <button onClick={()=>sendMsg()} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{busy?"...":"Send"}</button>
+            </div>
+          )}
         </div>)}
 
         {/* CODE */}
@@ -373,7 +368,22 @@ export default function Home(){
             {err&&errDisplay(err)}
             <div ref={chatEnd}/>
           </div>
-          {isListening?<VoiceBar/>:<ChatInput placeholder="Describe what to build..." onSend={()=>sendMsg(undefined,"code")} btnLabel="Run"/>}
+          {isListening?(
+            <div className="card p-2">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{background:"var(--ac)"}}>
+                <EqBars/>
+                {interimText&&<span className="font-mono text-xs truncate max-w-[200px]" style={{color:"var(--bg0)",opacity:0.8}}>{interimText}</span>}
+                <button onClick={stopVoice} className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:"var(--bg0)"}}><div className="h-3 w-3 rounded-sm" style={{background:"var(--ac)"}}/></button>
+              </div>
+            </div>
+          ):(
+            <div className="card p-2 flex items-end gap-2">
+              <textarea ref={inpRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg(undefined,"code")}}} placeholder="Describe what to build..." rows={1} className="flex-1 resize-none rounded-xl px-3.5 py-2.5 font-mono text-sm transition-all" style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+              <button onClick={()=>startVoice()} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Voice (English)"><MicIcon/></button>
+              <button onClick={()=>startVoice("te-IN")} className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{border:"1px solid var(--brd)",background:"var(--bg2)",color:"var(--t2)"}} title="Voice (Telugu)"><span className="text-[10px] font-bold" style={{color:"var(--t2)"}}>తె</span></button>
+              <button onClick={()=>sendMsg(undefined,"code")} disabled={!input.trim()||busy} className="btn px-4 py-2.5 text-sm">{busy?"...":"Run"}</button>
+            </div>
+          )}
         </div>)}
 
         {/* IMAGE */}
