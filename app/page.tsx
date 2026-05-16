@@ -132,6 +132,7 @@ export default function Home(){
   const[mode,setMode]=useState(MODES[1]);
   const[busy,setBusy]=useState(false);
   const[err,setErr]=useState("");
+  const[lastAiTs,setLastAiTs]=useState(0);
 
   const[imgP,setImgP]=useState("");
   const[imgM,setImgM]=useState(IMG_MODELS[0]);
@@ -162,7 +163,7 @@ export default function Home(){
 
   const msgs=tab==="code"?codeMsgs:chatMsgs;const setMsgs=tab==="code"?setCodeMsgs:setChatMsgs;
 
-  const sendMsg=async(text?:string,forceMode?:string)=>{const c=(text||input).trim();if(!c||busy)return;if(isListening)stopVoice();const um:Msg={role:"user",content:c,ts:Date.now()};const cur=tab==="code"?codeMsgs:chatMsgs;const set=tab==="code"?setCodeMsgs:setChatMsgs;set(p=>[...p,um]);setInput("");setBusy(true);setErr("");try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[...cur,um].map(m=>({role:m.role,content:m.content})),mode:forceMode||(tab==="code"?"code":mode.id)})});const d=await r.json();if(!r.ok)throw new Error(d.error);set(p=>[...p,{role:"assistant",content:d.content,ts:Date.now()}])}catch(e:any){setErr(e?.message||"Failed")}finally{setBusy(false)}};
+  const sendMsg=async(text?:string,forceMode?:string)=>{const c=(text||input).trim();if(!c||busy)return;if(isListening)stopVoice();const um:Msg={role:"user",content:c,ts:Date.now()};const cur=tab==="code"?codeMsgs:chatMsgs;const set=tab==="code"?setCodeMsgs:setChatMsgs;set(p=>[...p,um]);setInput("");setBusy(true);setErr("");try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[...cur,um].map(m=>({role:m.role,content:m.content})),mode:forceMode||(tab==="code"?"code":mode.id)})});const d=await r.json();if(!r.ok)throw new Error(d.error);const ts=Date.now();setLastAiTs(ts);set(p=>[...p,{role:"assistant",content:d.content,ts}])}catch(e:any){setErr(e?.message||"Failed")}finally{setBusy(false)}};
 
   const trySetMode=(m:typeof MODES[0])=>{if(m.id===mode.id)return;if(chatMsgs.length>0){setModePopup(m);return}setMode(m)};
   const confirmModeSwitch=()=>{if(modePopup){setChatMsgs([]);setMode(modePopup);setModePopup(null)}};
@@ -223,7 +224,7 @@ export default function Home(){
         ):(
           <>
           <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-1 pr-1 pb-3" onScroll={handleScroll}>
-              {curMsgs.map((m,i)=><ChatMessage key={i} m={m} style={chatStyle.id} onLongPress={handleLongPress} isNew={m.role==="assistant"&&i===curMsgs.length-1}/>)}
+              {curMsgs.map((m,i)=><ChatMessage key={m.ts} m={m} style={chatStyle.id} onLongPress={handleLongPress} isNew={m.role==="assistant"&&m.ts===lastAiTs}/>)}
               {busy&&(
                 <div className="flex items-center gap-2.5 py-2 px-1">
                   <Loader/>
