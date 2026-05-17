@@ -141,6 +141,14 @@ export default function Home(){
   const[imgs,setImgs]=useState<Img[]>([]);
   const[imgErr,setImgErr]=useState("");
   const[lb,setLb]=useState<Img|null>(null);
+  const[createMode,setCreateMode]=useState<"generate"|"modify">("generate");
+  const[uploadedImg,setUploadedImg]=useState<string|null>(null);
+  const[modifyBusy,setModifyBusy]=useState(false);
+  const[modifyErr,setModifyErr]=useState("");
+  const[modifyPrompt,setModifyPrompt]=useState("");
+  const[activeFilter,setActiveFilter]=useState<string|null>(null);
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const origImgRef=useRef<HTMLImageElement|null>(null);
 
   const[isListening,setIsListening]=useState(false);
   const[interimText,setInterimText]=useState("");
@@ -176,6 +184,113 @@ export default function Home(){
   const handleLongPress=(m:Msg,e:React.TouchEvent|React.MouseEvent)=>{const rect=(e.target as HTMLElement).getBoundingClientRect();setCtxMenu({msg:m,y:rect.top})};
 
   const Loader=mode.id==="beast"||tab==="code"?DnaHelix:PulseDots;
+
+  // Image upload handler
+  const handleImgUpload=(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const dataUrl=ev.target?.result as string;
+      setUploadedImg(dataUrl);
+      setActiveFilter(null);
+      const img=new Image();img.onload=()=>{origImgRef.current=img};img.src=dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Compress image to max 800px and reduce quality
+  const compressImage=(dataUrl:string):Promise<string>=>{
+    return new Promise((resolve)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const c=document.createElement("canvas");
+        const maxSize=800;
+        let w=img.width,h=img.height;
+        if(w>maxSize||h>maxSize){
+          if(w>h){h=Math.round(h*maxSize/w);w=maxSize}
+          else{w=Math.round(w*maxSize/h);h=maxSize}
+        }
+        c.width=w;c.height=h;
+        const ctx=c.getContext("2d");
+        if(ctx){ctx.drawImage(img,0,0,w,h)}
+        resolve(c.toDataURL("image/jpeg",0.7));
+      };
+      img.src=dataUrl;
+    });
+  };
+
+  // Client-side filters using Canvas
+  const applyFilter=(filter:string)=>{
+    if(!origImgRef.current||!canvasRef.current)return;
+    const img=origImgRef.current;const c=canvasRef.current;
+    c.width=img.width;c.height=img.height;
+    const ctx=c.getContext("2d");if(!ctx)return;
+    ctx.drawImage(img,0,0);
+
+    if(filter==="original"){setActiveFilter(null);setUploadedImg(origImgRef.current.src);return}
+
+    const imageData=ctx.getImageData(0,0,c.width,c.height);
+    const d=imageData.data;
+
+    if(filter==="grayscale"){for(let i=0;i<d.length;i+=4){const avg=(d[i]+d[i+1]+d[i+2])/3;d[i]=d[i+1]=d[i+2]=avg}}
+    else if(filter==="sepia"){for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];d[i]=Math.min(255,r*0.393+g*0.769+b*0.189);d[i+1]=Math.min(255,r*0.349+g*0.686+b*0.168);d[i+2]=Math.min(255,r*0.272+g*0.534+b*0.131)}}
+    else if(filter==="invert"){for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2]}}
+    else if(filter==="brightness"){for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*1.3);d[i+1]=Math.min(255,d[i+1]*1.3);d[i+2]=Math.min(255,d[i+2]*1.3)}}
+    else if(filter==="contrast"){const f=1.5;const intercept=128*(1-f);for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,Math.max(0,d[i]*f+intercept));d[i+1]=Math.min(255,Math.max(0,d[i+1]*f+intercept));d[i+2]=Math.min(255,Math.max(0,d[i+2]*f+intercept))}}
+    else if(filter==="blur"){ctx.putImageData(imageData,0,0);ctx.filter="blur(3px)";ctx.drawImage(c,0,0);setActiveFilter(filter);setUploadedImg(c.toDataURL("image/png"));return}
+    else if(filter==="sharpen"){const w=c.width,h=c.height;const orig=new Uint8ClampedArray(d);for(let y=1;y<h-1;y++){for(let x=1;x<w-1;x++){const i=(y*w+x)*4;for(let cidx=0;cidx<3;cidx++){const val=5*orig[i+cidx]-orig[i-4+cidx]-orig[i+4+cidx]-orig[i-w*4+cidx]-orig[i+w*4+cidx];d[i+cidx]=Math.min(255,Math.max(0,val))}}}}
+
+    ctx.putImageData(imageData,0,0);
+    setActiveFilter(filter);
+    setUploadedImg(c.toDataURL("image/png"));
+  };
+
+  // Background removal (simple threshold-based)
+  const removeBg=()=>{
+    if(!origImgRef.current||!canvasRef.current)return;
+    const img=origImgRef.current;const c=canvasRef.current;
+    c.width=img.width;c.height=img.height;
+    const ctx=c.getContext("2d");if(!ctx)return;
+    ctx.drawImage(img,0,0);
+    const imageData=ctx.getImageData(0,0,c.width,c.height);
+    const d=imageData.data;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i],g=d[i+1],b=d[i+2];
+      const brightness=(r+g+b)/3;
+      const saturation=Math.max(r,g,b)-Math.min(r,g,b);
+      if(brightness>220&&saturation<30)d[i+3]=0;
+      else if(brightness>200&&saturation<50)d[i+3]=Math.floor(d[i+3]*0.5);
+    }
+    ctx.putImageData(imageData,0,0);
+    setActiveFilter("bg-remove");
+    setUploadedImg(c.toDataURL("image/png"));
+  };
+
+  // Style transfer via API
+  const applyStyle=async(style:string)=>{
+    if(!uploadedImg||modifyBusy)return;
+    setModifyBusy(true);setModifyErr("");
+    try{
+      const desc=modifyPrompt.trim()||"a photograph";
+      const compressed=await compressImage(uploadedImg);
+      const r=await fetch("/api/modify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"style-transfer",prompt:desc,style,imageBase64:compressed})});
+      const d=await r.json();if(!r.ok)throw new Error(d.error);
+      setImgs(p=>[{url:d.url,prompt:`${style} style: ${desc}`,model:"Style",ts:Date.now()},...p]);
+    }catch(e:any){setModifyErr(e?.message||"Failed")}finally{setModifyBusy(false)}
+  };
+
+  // Image-to-image via API
+  const modifyImg=async()=>{
+    if(!modifyPrompt.trim()||modifyBusy)return;
+    setModifyBusy(true);setModifyErr("");
+    try{
+      const compressed=await compressImage(uploadedImg!);
+      const r=await fetch("/api/modify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"img2img",prompt:modifyPrompt.trim(),imageBase64:compressed})});
+      const d=await r.json();if(!r.ok)throw new Error(d.error);
+      setImgs(p=>[{url:d.url,prompt:modifyPrompt.trim(),model:"Modify",ts:Date.now()},...p]);
+    }catch(e:any){setModifyErr(e?.message||"Failed")}finally{setModifyBusy(false)}
+  };
+
   const errBox=(e:string)=><div className="flex items-center gap-2 py-2 px-3 rounded-lg my-1" style={{background:"rgba(232,85,53,0.06)",border:"1px solid rgba(232,85,53,0.12)"}}><span className="text-xs" style={{color:"#e85535"}}>{e.includes("502")||e.includes("demand")?"Aether is warming up — try again in a moment":e.includes("504")||e.includes("long")?"Taking longer than expected — try Swift mode":e}</span></div>;
 
   // SPLASH with particles
@@ -312,17 +427,80 @@ export default function Home(){
         {tab==="code"&&chatArea(true)}
         {tab==="image"&&(
           <div className="pgIn h-full overflow-y-auto">
-            <div className="glass p-4 mb-4">
-              <div className="flex items-center gap-1.5 mb-3 overflow-x-auto no-scrollbar">{IMG_MODELS.map(m=><button key={m.id} onClick={()=>setImgM(m)} className={`mpill shrink-0 ${imgM.id===m.id?"on":""}`}>{m.label}</button>)}</div>
-              <textarea ref={imgRef} value={imgP} onChange={e=>setImgP(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();genImg()}}} placeholder="Describe your image..." rows={2} className="w-full resize-none rounded-xl px-4 py-3 font-body text-sm mb-2.5" style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
-              <div className="flex justify-between items-center">
-                <button onClick={()=>setImgP(["Cyberpunk market, neon, rain","Zen garden, isometric, tilt-shift","Steampunk owl, clocktower","Cabin in snowstorm, fireplace"][Math.floor(Math.random()*4)])} className="font-body text-[11px] hover:opacity-80" style={{color:"var(--t2)"}}>✦ Inspire</button>
-                <button onClick={genImg} disabled={!imgP.trim()||imgBusy} className="btn px-5 py-2 text-sm">{imgBusy?`${imgSec}s...`:"Generate"}</button>
-              </div>
-              {imgBusy&&<div className="mt-2 flex items-center gap-2"><PulseDots/><span className="font-mono text-[10px]" style={{color:"var(--t2)"}}>{imgSec<10?"Starting...":"Creating..."}</span></div>}
-              {imgErr&&<p className="mt-2 text-xs" style={{color:"#e85535"}}>{imgErr}</p>}
+            {/* Generate / Modify toggle */}
+            <div className="flex gap-1 mb-4">
+              <button onClick={()=>setCreateMode("generate")} className={`mpill ${createMode==="generate"?"on":""}`}>✦ Generate</button>
+              <button onClick={()=>setCreateMode("modify")} className={`mpill ${createMode==="modify"?"on":""}`}>✎ Modify</button>
             </div>
-            {imgs.length>0&&<div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{imgs.map((img,i)=><div key={img.ts+""+i} className="imgRv glass group overflow-hidden cursor-pointer" onClick={()=>setLb(img)}><div className="relative aspect-square overflow-hidden"><img src={img.url} alt={img.prompt} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy"/><div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/80 via-transparent opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-full p-2"><p className="text-[10px] text-gray-300 line-clamp-1">{img.prompt}</p></div></div></div></div>)}</div>}
+
+            {createMode==="generate"?(
+              <div className="glass p-4 mb-4">
+                <div className="flex items-center gap-1.5 mb-3 overflow-x-auto no-scrollbar">{IMG_MODELS.map(m=><button key={m.id} onClick={()=>setImgM(m)} className={`mpill shrink-0 ${imgM.id===m.id?"on":""}`}>{m.label}</button>)}</div>
+                <textarea ref={imgRef} value={imgP} onChange={e=>setImgP(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();genImg()}}} placeholder="Describe your image..." rows={2} className="w-full resize-none rounded-xl px-4 py-3 font-body text-sm mb-2.5" style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+                <div className="flex justify-between items-center">
+                  <button onClick={()=>setImgP(["Cyberpunk market, neon, rain","Zen garden, isometric","Steampunk owl, clocktower","Cabin in snowstorm"][Math.floor(Math.random()*4)])} className="font-body text-[11px] hover:opacity-80" style={{color:"var(--t2)"}}>✦ Inspire</button>
+                  <button onClick={genImg} disabled={!imgP.trim()||imgBusy} className="btn px-5 py-2 text-sm">{imgBusy?`${imgSec}s...`:"Generate"}</button>
+                </div>
+                {imgBusy&&<div className="mt-2 flex items-center gap-2"><PulseDots/><span className="font-mono text-[10px]" style={{color:"var(--t2)"}}>{imgSec<10?"Starting...":"Creating..."}</span></div>}
+                {imgErr&&<p className="mt-2 text-xs" style={{color:"#e85535"}}>{imgErr}</p>}
+              </div>
+            ):(
+              <div className="glass p-4 mb-4">
+                {!uploadedImg?(
+                  <label className="flex flex-col items-center justify-center h-40 rounded-xl cursor-pointer transition-all hover:border-[var(--brdh)]" style={{border:"2px dashed var(--brd)"}}>
+                    <span className="text-2xl mb-2 opacity-30">📷</span>
+                    <span className="font-body text-sm" style={{color:"var(--t2)"}}>Drop image or tap to upload</span>
+                    <span className="font-body text-[10px] mt-1" style={{color:"var(--t2)",opacity:0.5}}>JPG, PNG, WebP</span>
+                    <input type="file" accept="image/*" onChange={handleImgUpload} className="hidden"/>
+                  </label>
+                ):(
+                  <div>
+                    <div className="relative mb-3">
+                      <img src={uploadedImg} alt="Preview" className="w-full max-h-64 object-contain rounded-xl" style={{background:"var(--bg0)"}}/>
+                      <button onClick={()=>{setUploadedImg(null);setActiveFilter(null);origImgRef.current=null}} className="absolute top-2 right-2 h-7 w-7 rounded-lg flex items-center justify-center" style={{background:"rgba(0,0,0,0.6)",color:"#fff",fontSize:"12px"}}>✕</button>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="font-mono text-[10px] mb-2" style={{color:"var(--t2)"}}>FILTERS</p>
+                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        {[{id:"original",label:"Original"},{id:"grayscale",label:"B&W"},{id:"sepia",label:"Sepia"},{id:"invert",label:"Invert"},{id:"brightness",label:"Bright"},{id:"contrast",label:"Contrast"},{id:"blur",label:"Blur"},{id:"sharpen",label:"Sharpen"}].map(f=><button key={f.id} onClick={()=>applyFilter(f.id)} className={`mpill shrink-0 ${activeFilter===f.id?"on":""}`} style={{fontSize:"11px"}}>{f.label}</button>)}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="font-mono text-[10px] mb-2" style={{color:"var(--t2)"}}>BACKGROUND</p>
+                      <button onClick={removeBg} className={`mpill ${activeFilter==="bg-remove"?"on":""}`} style={{fontSize:"11px"}}>Remove Background</button>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="font-mono text-[10px] mb-2" style={{color:"var(--t2)"}}>AI STYLE TRANSFER</p>
+                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        {[{id:"anime",label:"Anime"},{id:"painting",label:"Oil Paint"},{id:"watercolor",label:"Watercolor"},{id:"sketch",label:"Sketch"},{id:"3d",label:"3D Render"},{id:"cyberpunk",label:"Cyberpunk"},{id:"vintage",label:"Vintage"},{id:"pop_art",label:"Pop Art"}].map(s=><button key={s.id} onClick={()=>applyStyle(s.id)} disabled={modifyBusy} className="mpill shrink-0" style={{fontSize:"11px"}}>{s.label}</button>)}
+                      </div>
+                    </div>
+
+                    <div className="mb-2">
+                      <p className="font-mono text-[10px] mb-2" style={{color:"var(--t2)"}}>AI MODIFY (describe changes)</p>
+                      <div className="flex gap-2">
+                        <input value={modifyPrompt} onChange={e=>setModifyPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")modifyImg()}} placeholder="Make it sunset, add snow..." className="flex-1 rounded-xl px-3 py-2 font-body text-sm" style={{border:"1px solid var(--brd)",background:"var(--bg0)",color:"var(--t0)"}}/>
+                        <button onClick={modifyImg} disabled={!modifyPrompt.trim()||modifyBusy} className="btn px-4 py-2 text-sm">{modifyBusy?"...":"Apply"}</button>
+                      </div>
+                    </div>
+
+                    {modifyBusy&&<div className="mt-2 flex items-center gap-2"><PulseDots/><span className="font-mono text-[10px]" style={{color:"var(--t2)"}}>Applying...</span></div>}
+                    {modifyErr&&<p className="mt-2 text-xs" style={{color:"#e85535"}}>{modifyErr}</p>}
+
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={()=>{if(!uploadedImg)return;const a=document.createElement("a");a.href=uploadedImg;a.download=`aether-modified-${Date.now()}.png`;a.click()}} className="mpill text-[11px]">Download Modified</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <canvas ref={canvasRef} className="hidden"/>
+
+            {imgs.length>0&&<div><div className="flex justify-between items-center mb-3"><span className="font-display text-sm" style={{color:"var(--t1)"}}>Gallery</span><button onClick={()=>setConfirmDialog({text:"Clear all images?",onOk:()=>{setImgs([]);setConfirmDialog(null)}})} className="font-mono text-[10px]" style={{color:"var(--t2)"}}>Clear</button></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{imgs.map((img,i)=><div key={img.ts+""+i} className="imgRv glass group overflow-hidden cursor-pointer" onClick={()=>setLb(img)}><div className="relative aspect-square overflow-hidden"><img src={img.url} alt={img.prompt} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy"/><div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/80 via-transparent opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-full p-2"><p className="text-[10px] text-gray-300 line-clamp-1">{img.prompt}</p><span className="font-mono text-[8px] text-gray-500">{img.model}</span></div></div></div></div>)}</div></div>}
           </div>
         )}
       </main>
