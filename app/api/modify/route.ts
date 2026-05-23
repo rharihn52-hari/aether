@@ -161,17 +161,19 @@ export async function POST(req: NextRequest) {
 
     if (!imageBase64) return NextResponse.json({ error: "Upload an image first." }, { status: 400 });
 
+    const styleInstructions: Record<string, string> = {
+      anime: "Convert to anime style, cel-shaded, vibrant colors",
+      painting: "Convert to oil painting, visible brushstrokes, impressionist",
+      watercolor: "Convert to watercolor painting, soft washes, paper texture",
+      sketch: "Convert to pencil sketch, detailed line drawing, graphite",
+      "3d": "Convert to 3D rendered style, Pixar-like, ray traced",
+      cyberpunk: "Make cyberpunk style with neon lights and futuristic elements",
+      vintage: "Make look like vintage 1970s photograph with film grain",
+      pop_art: "Convert to pop art style with bold colors and halftone dots",
+    };
+
     const instruction = action === "style-transfer"
-      ? ({
-          anime: "Convert to anime style, cel-shaded, vibrant colors",
-          painting: "Convert to oil painting, visible brushstrokes, impressionist",
-          watercolor: "Convert to watercolor painting, soft washes, paper texture",
-          sketch: "Convert to pencil sketch, detailed line drawing, graphite",
-          "3d": "Convert to 3D rendered style, Pixar-like, ray traced",
-          cyberpunk: "Make cyberpunk style with neon lights and futuristic elements",
-          vintage: "Make look like vintage 1970s photograph with film grain",
-          pop_art: "Convert to pop art style with bold colors and halftone dots",
-        }[style] || `Convert to ${style} style`)
+      ? (styleInstructions[style as string] || `Convert to ${style} style`)
       : prompt;
 
     console.log(`[Aether] ${action}: "${instruction?.slice(0, 60)}..."`);
